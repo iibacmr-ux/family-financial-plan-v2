@@ -9,7 +9,7 @@ import xlsxwriter
 
 # Configuration de la page
 st.set_page_config(
-    page_title="Plan Financier Familial X",
+    page_title="Plan Financier Familial",
     page_icon="💰",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -434,7 +434,7 @@ def export_to_excel():
 def render_sidebar():
     """Affiche la sidebar avec navigation radio et filtre global amélioré"""
     with st.sidebar:
-        st.markdown("### 💰 Plan Financier Familial")
+        st.markdown("### 💰 Plan Financier Familial X")
         st.markdown("*Alix & William - Vers l'Indépendance 2030*")
 
         # Filtre global mois/année avec option "Tout"
