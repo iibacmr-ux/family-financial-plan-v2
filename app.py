@@ -9,7 +9,7 @@ import xlsxwriter
 
 # Configuration de la page
 st.set_page_config(
-    page_title="Plan Financier Familial",
+    page_title="Plan Financier Familial X",
     page_icon="💰",
     layout="wide",
     initial_sidebar_state="expanded"
