@@ -299,6 +299,27 @@ def categorize_project(projet):
     else:
         return 'en-cours', 'En Cours', '#007bff'
 
+def filter_by_date(projets):
+    year = st.session_state.filters_date['year']
+    month = st.session_state.filters_date['month']
+
+    def visible(p):
+        start_year = p['date_creation'].year
+        # Supposons date fin = échéance, ou date_modification
+        end_date = p.get('echeance', p.get('date_modification', datetime.now()))
+        if year != "Tous" and start_year != int(year):
+            return False
+        if month != "Tous":
+            # vérifier mois dans la plage date_creation à date fin
+            start = p['date_creation']
+            end = end_date if isinstance(end_date, date) else end_date.date()
+            filter_m = int(month)
+            return (start.month <= filter_m <= end.month) if (start.year == end.year) else True
+        return True
+
+    return [p for p in projets if visible(p)]
+
+
 # ============================================================================
 # FONCTIONS D'ALLOCATION DYNAMIQUE
 # ============================================================================
@@ -413,13 +434,23 @@ def render_sidebar():
             label_visibility="collapsed"
         )
         
+        # Ajout d’un filtre global avec "Mois", "Année" et "Tous" dans la sidebar gauche
+        st.markdown("### 📅 Filtre Global par Date") 
+        filter_year = st.selectbox("Année", ["Tous"] + sorted(set([p['date_creation'].year for p in st.session_state.projets])), index=0)
+        filter_month = st.selectbox("Mois", ["Tous"] + [f"{i:02d}" for i in range(1,13)], index=0) 
+        st.session_state.filters_date = {'year': filter_year, 'month': filter_month}
+        
         # Phase actuelle
         kpis = calculer_kpis()
         phase = kpis['phase_actuelle']
+        # Calcul du total budget projet filtré 
+        filtered_projets = filter_by_date(st.session_state.projets) 
+        total_budget_filtre = sum(p['montant_total'] for p in filtered_projets)
         st.markdown("---")
         st.markdown(f"**🎯 Phase:** {phase}")
         st.markdown(f"**💰 Revenus:** {format_currency(kpis['revenus_mensuels'])}")
-        st.markdown(f"**📊 Cash Flow:** {format_currency(kpis['cash_flow_mensuel'])}")
+        st.markdown(f"**💼 Budget Total Filtré:** {format_currency(total_budget_filtre)}")
+        st.markdown(f"**📊 Cash Flow:** {format_currency(kpis['cash_flow_mensuel'])}")        
         
         return selected_page
 
@@ -580,7 +611,11 @@ def show_quick_add_project_modal():
                             'date_creation': datetime.now(),
                             'date_modification': datetime.now(),
                             'suivi_mensuel': [],
-                            'allocations_recues': []
+                            'allocations_recues': [],
+                            'date_creation': datetime.now(),
+                            'date_modification': datetime.now(),
+                            'created_by': 'William',  # Exemple à remplacer par utilisateur courant
+                            'updated_by': 'William',
                         }
                         st.session_state.projets.append(nouveau_projet)
                         st.success(f"✅ Projet '{nom}' créé !")
@@ -609,9 +644,12 @@ def show_quick_add_revenue_modal():
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button("✅ Créer", type="primary"):
+                    # À l'intérieur du formulaire de création de revenu
+                    date_disponibilite = st.date_input("Date de mise à disposition", value=date.today())
                     if nom and montant > 0:
                         existing_ids = [r['id'] for r in st.session_state.revenus_variables]
                         new_id = max(existing_ids) + 1 if existing_ids else 1
+                        # Lors de la création du revenu
                         nouveau_revenu = {
                             'id': new_id,
                             'nom': nom,
@@ -621,6 +659,7 @@ def show_quick_add_revenue_modal():
                             'responsable': responsable,
                             'date_creation': datetime.now(),
                             'date_modification': datetime.now(),
+                            'date_disponibilite': date_disponibilite,
                             'allocations': []
                         }
                         st.session_state.revenus_variables.append(nouveau_revenu)
@@ -690,6 +729,29 @@ def show_projets_liste():
     if st.session_state.get('show_add_project_form'):
         show_add_project_form_complete()
 
+def show_edit_project_form():
+    if st.session_state.get('show_edit_project_form') and st.session_state.get('edit_project_id'):
+        projet = next((p for p in st.session_state.projets if p['id'] == st.session_state.edit_project_id), None)
+        if projet:
+            with st.expander(f"✏️ Modifier Projet: {projet['nom']}", expanded=True):
+                with st.form("edit_project_form"):
+                    nom = st.text_input("Nom du projet", value=projet['nom'])
+                    # Ajoutez ici tous les champs à modifier, préremplis avec projet
+                    # Ex:
+                    montant_total = st.number_input("Budget total (FCFA)", value=projet['montant_total'])
+                    # ...
+                    if st.form_submit_button("✅ Enregistrer"):
+                        projet['nom'] = nom
+                        projet['montant_total'] = montant_total
+                        projet['date_modification'] = datetime.now()
+                        st.session_state.show_edit_project_form = False
+                        st.success(f"Projet '{nom}' modifié !")
+                        st.experimental_rerun()
+                    if st.form_submit_button("❌ Annuler"):
+                        st.session_state.show_edit_project_form = False
+                        st.experimental_rerun()
+
+
 def show_project_card_enhanced(projet):
     """Affiche une carte projet améliorée avec vélocité et probabilité"""
     with st.container():
@@ -699,6 +761,10 @@ def show_project_card_enhanced(projet):
         with col1:
             st.subheader(f"🎯 {projet['nom']}")
             st.caption(f"👤 {safe_get(projet, 'responsable', 'Non défini')}")
+            if st.button("✏️ Modifier", key=f"edit_{projet['id']}"):
+                st.session_state.edit_project_id = projet['id']
+                st.session_state.show_edit_project_form = True  # Ajout flag pour afficher form
+                st.experimental_rerun()
         
         with col2:
             type_colors = {
@@ -1348,7 +1414,11 @@ def show_add_project_form_complete():
                             'date_creation': datetime.now(),
                             'date_modification': datetime.now(),
                             'suivi_mensuel': [],
-                            'allocations_recues': []
+                            'allocations_recues': [],
+                            'date_creation': datetime.now(),
+                            'date_modification': datetime.now(),
+                            'created_by': 'William',  # Exemple à remplacer par utilisateur courant
+                            'updated_by': 'William',
                         }
                         st.session_state.projets.append(nouveau_projet)
                         st.session_state.show_add_project_form = False
@@ -1380,10 +1450,12 @@ def show_add_revenue_form_with_allocation():
             col1, col2 = st.columns(2)
             with col1:
                 if st.form_submit_button("✅ Ajouter Revenu", type="primary"):
+                    # À l'intérieur du formulaire de création de revenu
+                    date_disponibilite = st.date_input("Date de mise à disposition", value=date.today())
                     if nom_revenu and montant_mensuel > 0 and responsable:
                         existing_ids = [r['id'] for r in st.session_state.revenus_variables]
                         new_id = max(existing_ids) + 1 if existing_ids else 1
-                        
+                        # Lors de la création du revenu
                         nouveau_revenu = {
                             'id': new_id,
                             'nom': nom_revenu,
@@ -1393,6 +1465,7 @@ def show_add_revenue_form_with_allocation():
                             'responsable': responsable,
                             'date_creation': datetime.now(),
                             'date_modification': datetime.now(),
+                            'date_disponibilite': date_disponibilite,
                             'allocations': []
                         }
                         
@@ -1407,6 +1480,9 @@ def show_add_revenue_form_with_allocation():
                 if st.form_submit_button("❌ Annuler"):
                     st.session_state.show_add_revenue_form = False
                     st.rerun()
+
+
+
 
 # ============================================================================
 # 3. ANALYTICS - BUSINESS INTELLIGENCE
@@ -1555,6 +1631,28 @@ def show_analytics():
             for p in st.session_state.projets
         ])
         
+        total_budget = sum(p['montant_total'] for p in st.session_state.projets)
+        total_utilise = sum(p['montant_utilise_reel'] for p in st.session_state.projets)
+        total_cashflow = sum(p['cash_flow_mensuel'] for p in st.session_state.projets)
+        total_roi = sum(p['roi_attendu'] for p in st.session_state.projets) / len(st.session_state.projets) if st.session_state.projets else 0
+        total_progression = (total_utilise / total_budget * 100) if total_budget > 0 else 0
+
+        total_row = {
+            'Nom': 'TOTAL',
+            'Type': '',
+            'Budget Total': format_currency(total_budget),
+            'Utilisé': format_currency(total_utilise),
+            'Progression': f"{total_progression:.1f}%",
+            'Cash Flow/Mois': format_currency(total_cashflow),
+            'ROI Attendu': f"{total_roi:.1f}%",
+            'Vélocité': '',
+            'Probabilité': '',
+            'Responsable': '',
+            'Statut': '',
+            'Échéance': ''
+        }
+        
+        df_detail = df_detail.append(total_row, ignore_index=True)
         st.dataframe(df_detail, use_container_width=True, hide_index=True)
     
     # Recommandations automatiques
