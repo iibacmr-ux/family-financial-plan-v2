@@ -22,7 +22,7 @@ def load_css():
     st.markdown("""
     <style>
     .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #ffffff 0%, #ffffff 100%);
     }
     .main-header {
         background: white;
